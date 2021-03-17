@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <!-- License: Custom code on this page licensed under GPLv3 (see LICENSE.md). Linked 3rd party scripts and style are released under their respective licenses. -->
+  <head>    
+    <title>Afstandmeter</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+        integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+        crossorigin=""/>    
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+        integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+        crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
+    <style>
+        html,body, #app {
+            height:100%;
+        }
+
+        .flex-fill {
+            flex:1;
+        }
+        
+        #map-container {
+            padding: 1em;
+        }
+        
+        .digit {
+            color: #cccccc;
+            background-color: #111111;
+            padding: 5px;
+        }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+    <div class="container-fluid d-flex h-100 flex-column">
+        <!-- Container must stretch to the height of the parent -->
+        <div class="row">
+            <nav class="navbar navbar-expand-md navbar-dark bg-dark flex-grow-1">
+                <a class="navbar-brand" href="#">Afstandmeter</a>
+                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>                
+                <div class="collapse navbar-collapse" id="navbarCollapse">
+                    <ul class="navbar-nav">
+                    </ul>
+                    <div class="mr-auto">
+                        <digit v-for="d in distanceDigits" v-bind:digit="d"></digit>
+                    </div>
+                    <button type="button" class="btn btn-secondary mt-2 mt-md-0" onClick="LeafletMap.clear()">Clear</button>                    
+                </div>
+            </nav>
+        </div>
+        <div id="map-container" class="row bg-light flex-fill d-flex justify-content-start">
+            <div id="map" class="flex-fill">
+            </div>
+        </div>        
+    </div>    
+    </div> <!-- close app. -->
+    <script type="text/javascript">                                               
+        String.prototype.lpad = function(padString, length) {
+            var str = this;
+            while (str.length < length)
+                str = padString + str;
+            return str;
+        };
+        
+        Vue.component('digit', {
+            delimiters: ['[[', ']]'],
+            props: ['digit'],
+            template: '<span class="digit">[[ digit ]]</span>'
+        });
+                
+        var app = new Vue({
+            delimiters: ['[[', ']]'],
+            el: '#app',
+            data: {
+                distance: 0                                            
+            },
+            computed: {
+                distanceDigits: function() {
+                    var asText = "" + Number(this.distance.toFixed(2));                                        
+                    return asText.lpad("0", 10) + " M";
+                }
+            }
+        });
+        
+        var LeafletMap = new function() {
+            var map;
+            var polyLine;
+            var drawingPoly = false;
+            
+            function resizeInternal() {
+                map.invalidateSize();
+            } 
+            
+            this.clear = function() { 
+                polyLine.setLatLngs([]);
+                drawingPoly = false;
+                app.distance = 0;
+                document.getElementById('map').style.cursor = '';
+            }
+            
+            this.undo = function() {
+                if (polyLine.isEmpty()) return;
+                var array = polyLine.getLatLngs()[0];
+                if (array.length < 3) return;
+                array.pop();
+                polyLine.setLatLngs([array]);                
+            }
+            
+            this.resize = function() { resizeInternal(); };
+            
+            this.init = function(mapElementId) {
+                map = L.map(mapElementId).setView([52.37276, 4.89267], 18);
+                
+                calcDistance = function() {
+                    var array = polyLine.getLatLngs()[0];                    
+                    if(array.length < 3) return;
+                    var totalDist = 0.0;
+                    for(var i=1; i < array.length - 1; i++) {                        
+                        totalDist += map.distance(array[i], array[i - 1]);
+                    }
+                    console.log("Total distance on polyline: " + totalDist + " meters.");
+                    app.distance = totalDist;
+                }
+                
+                // Map events.
+                map.on('click', function(me) {                    
+                    if (polyLine.isEmpty()) {                        
+                        polyLine.setLatLngs([[me.latlng, me.latlng]]);
+                        drawingPoly = true;
+                        document.getElementById('map').style.cursor = 'crosshair';
+                    } else {
+                        var polyPoints = polyLine.getLatLngs();
+                        // Assume only 1 ring so add point to first element.
+                        polyPoints[0].push(me.latlng);
+                        polyPoints[0].push(me.latlng);
+                        polyLine.setLatLngs(polyPoints);
+                        calcDistance();
+                    }                    
+                });
+                map.on('mousemove', function(me) {
+                    if (drawingPoly && !polyLine.isEmpty()) {                        
+                        var array = polyLine.getLatLngs()[0];
+                        array[array.length - 1] = me.latlng;
+                        // Assume only 1 ring so add point to first element.
+                        polyLine.setLatLngs([array]);                        
+                    }
+                });                
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> bijdragers'
+                }).addTo(map);                                    
+                                
+                polyLine = L.polyline([], {color: 'green'}).addTo(map);                                                        
+                    
+                resizeInternal();                            
+            };
+        };
+                
+        window.onresize = function(event) {
+            LeafletMap.resize();
+        };
+        
+        document.addEventListener('keydown', function(event) {
+            const keyName = event.key;
+            if (keyName === 'Control') {
+                // do not alert when only Control key is pressed.
+                return;
+            }                    
+            if (event.ctrlKey) {                
+                console.log(`Combination of ctrlKey + ${keyName}`);
+                if (keyName === "z") {
+                    LeafletMap.undo();
+                }
+            } else {
+                if (keyName === "Escape") {
+                    LeafletMap.clear();
+                }                
+            }
+        }, false);
+
+        document.addEventListener('keyup', function(event) {
+            const keyName = event.key;
+            if (keyName === 'Control') {
+                console.log('Control key was released');
+            }
+        }, false);
+        
+        LeafletMap.init("map");
+    </script>    
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js" integrity="sha384-6khuMg9gaYr5AxOqhkVIODVIvm9ynTT5J4V1cfthmT+emCG6yVmEZsRHdxlotUnm" crossorigin="anonymous"></script>    
+  </body>
+</html>
