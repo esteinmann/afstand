@@ -78,14 +78,30 @@
             delimiters: ['[[', ']]'],
             el: '#app',
             data: {
-                distance: 0                                            
+                distance: 0.0,
+                // Coordinate where the map starts. Defaults to Amsterdam city center.
+                startCoord: { 
+                    lat: 52.37276,
+                    lon: 4.89267,
+                    zoom: 18
+                }
             },
             computed: {
                 distanceDigits: function() {
-                    var asText = "" + Number(this.distance.toFixed(2));                                        
+                    var asText = "" + Number(this.distance).toFixed(2);                                        
                     return asText.lpad("0", 10) + " M";
                 }
-            }
+            },
+            created: function () {                
+                // In case the local storage contains a start coordinate, use that.
+                if(localStorage.lat && localStorage.lon && localStorage.zoom) {
+                    this.startCoord = {
+                        lat: Number(localStorage.lat),
+                        lon: Number(localStorage.lon),
+                        zoom: Number(localStorage.zoom)
+                    }
+                }                
+            }                
         });
         
         var LeafletMap = new function() {
@@ -95,12 +111,19 @@
             
             function resizeInternal() {
                 map.invalidateSize();
-            } 
+            }
+            
+            function updateLocalStorage() {
+                var center = map.getCenter();
+                localStorage.lat = center.lat;
+                localStorage.lon = center.lng;
+                localStorage.zoom = map.getZoom();
+            }
             
             this.clear = function() { 
                 polyLine.setLatLngs([]);
                 drawingPoly = false;
-                app.distance = 0;
+                app.distance = 0.0;
                 document.getElementById('map').style.cursor = '';
             }
             
@@ -115,7 +138,8 @@
             this.resize = function() { resizeInternal(); };
             
             this.init = function(mapElementId) {
-                map = L.map(mapElementId).setView([52.37276, 4.89267], 18);
+                map = L.map(mapElementId).setView([app.startCoord.lat, app.startCoord.lon], app.startCoord.zoom);
+                polyLine = L.polyline([], {color: 'green'}).addTo(map);
                 
                 calcDistance = function() {
                     var array = polyLine.getLatLngs()[0];                    
@@ -137,7 +161,7 @@
                     } else {
                         var polyPoints = polyLine.getLatLngs();
                         // Assume only 1 ring so add point to first element.
-                        polyPoints[0].push(me.latlng);
+                        polyPoints[0].push(me.latlng);                        
                         polyPoints[0].push(me.latlng);
                         polyLine.setLatLngs(polyPoints);
                         calcDistance();
@@ -150,14 +174,18 @@
                         // Assume only 1 ring so add point to first element.
                         polyLine.setLatLngs([array]);                        
                     }
-                });                
+                });
+                map.on('moveend', function(me) {
+                    updateLocalStorage();
+                });
+                map.on('zoomend', function(me) {                    
+                    updateLocalStorage();                    
+                });
                 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> bijdragers'
                 }).addTo(map);                                    
-                                
-                polyLine = L.polyline([], {color: 'green'}).addTo(map);                                                        
-                    
+                                                                    
                 resizeInternal();                            
             };
         };
