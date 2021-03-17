@@ -32,6 +32,10 @@
             background-color: #111111;
             padding: 5px;
         }
+        
+        .leaflet-container.crosshair-cursor-enabled {
+            cursor:crosshair;
+        }        
     </style>
   </head>
   <body>
@@ -120,12 +124,20 @@
                 localStorage.zoom = map.getZoom();
             }
             
+            function adaptCursor() {
+                if (drawingPoly) {
+                    L.DomUtil.addClass(map._container,'crosshair-cursor-enabled');  
+                } else {
+                    L.DomUtil.removeClass(map._container,'crosshair-cursor-enabled');  
+                }                 
+            }
+            
             this.clear = function() { 
                 polyLine.setLatLngs([]);
                 drawingPoly = false;
                 app.distance = 0.0;
-                document.getElementById('map').style.cursor = '';
-            }
+                adaptCursor();
+            };
             
             this.undo = function() {
                 if (polyLine.isEmpty()) return;
@@ -139,7 +151,10 @@
             
             this.init = function(mapElementId) {
                 map = L.map(mapElementId).setView([app.startCoord.lat, app.startCoord.lon], app.startCoord.zoom);
-                polyLine = L.polyline([], {color: 'green'}).addTo(map);
+                polyLine = L.polyline([], { 
+                    color: 'green', 
+                    interactive: false
+                }).addTo(map);
                 
                 calcDistance = function() {
                     var array = polyLine.getLatLngs()[0];                    
@@ -150,14 +165,14 @@
                     }
                     console.log("Total distance on polyline: " + totalDist + " meters.");
                     app.distance = totalDist;
-                }
-                
+                };
+                                                    
                 // Map events.
                 map.on('click', function(me) {                    
                     if (polyLine.isEmpty()) {                        
                         polyLine.setLatLngs([[me.latlng, me.latlng]]);
                         drawingPoly = true;
-                        document.getElementById('map').style.cursor = 'crosshair';
+                        adaptCursor();                       
                     } else {
                         var polyPoints = polyLine.getLatLngs();
                         // Assume only 1 ring so add point to first element.
@@ -219,7 +234,7 @@
             }
         }, false);
         
-        LeafletMap.init("map");
+        LeafletMap.init("map");        
     </script>    
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js" integrity="sha384-6khuMg9gaYr5AxOqhkVIODVIvm9ynTT5J4V1cfthmT+emCG6yVmEZsRHdxlotUnm" crossorigin="anonymous"></script>    
   </body>
