@@ -62,7 +62,27 @@
             <div id="map" class="flex-fill">
             </div>
         </div>        
-    </div>    
+    </div>
+    <!-- Modal -->
+    <div class="modal fade" id="closeRouteModal" tabindex="-1" role="dialog" aria-labelledby="closeRouteModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="closeRouteModalTitle">Close route</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                You are near the starting point again. Do you want to close the route?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onClick="LeafletMap.confirm()">Close route</button>
+                </div>
+            </div>
+        </div>
+    </div>
     </div> <!-- close app. -->
     <script type="text/javascript">                                               
         String.prototype.lpad = function(padString, length) {
@@ -112,6 +132,8 @@
             var map;
             var polyLine;
             var drawingPoly = false;
+            var dialogConfirmed = false;
+            var lastClickedCoord;
             
             function resizeInternal() {
                 map.invalidateSize();
@@ -131,6 +153,36 @@
                     L.DomUtil.removeClass(map._container,'crosshair-cursor-enabled');  
                 }                 
             }
+                
+            function calcDistance() {
+                var array = polyLine.getLatLngs()[0];                    
+                if(array.length < 3) return;
+                var totalDist = 0.0;
+                for(var i=1; i < array.length - 1; i++) {                        
+                    totalDist += map.distance(array[i], array[i - 1]);
+                    }
+                console.log("Total distance on polyline: " + totalDist + " meters.");
+                app.distance = totalDist;
+            }
+            
+            function addCoord(close) {
+                var polyPoints = polyLine.getLatLngs();
+                if (close) {                    
+                    // Remove the last coord;
+                    var lastCoord = polyPoints[0].pop();                    
+                    // Add the starting coord;                    
+                    polyPoints[0].push(polyPoints[0][0]);
+                    drawingPoly = false;
+                    adaptCursor();
+                } else {                                        
+                    // Add the last clicked.
+                    polyPoints[0].push(lastClickedCoord);
+                    // Add the last clicked again, this one will follow the mouse movements.
+                    polyPoints[0].push(lastClickedCoord);
+                }
+                polyLine.setLatLngs(polyPoints);
+                calcDistance();
+            }
             
             this.clear = function() { 
                 polyLine.setLatLngs([]);
@@ -138,6 +190,20 @@
                 app.distance = 0.0;
                 adaptCursor();
             };
+            
+            this.confirm = function() {
+                dialogConfirmed = true;
+                $('#closeRouteModal').modal('hide');
+            }
+            
+            this.routeCloseModalHidden = function(e) {
+                console.log("Modal hidden");
+                if (dialogConfirmed) {
+                    addCoord(true);                    
+                } else {
+                    addCoord(false);                    
+                }
+            }
             
             this.undo = function() {
                 if (polyLine.isEmpty()) return;
@@ -155,31 +221,27 @@
                     color: 'green', 
                     interactive: false
                 }).addTo(map);
-                
-                calcDistance = function() {
-                    var array = polyLine.getLatLngs()[0];                    
-                    if(array.length < 3) return;
-                    var totalDist = 0.0;
-                    for(var i=1; i < array.length - 1; i++) {                        
-                        totalDist += map.distance(array[i], array[i - 1]);
-                    }
-                    console.log("Total distance on polyline: " + totalDist + " meters.");
-                    app.distance = totalDist;
-                };
                                                     
                 // Map events.
                 map.on('click', function(me) {                    
-                    if (polyLine.isEmpty()) {                        
+                    if (!drawingPoly) {                        
+                        app.distance = 0.0;
                         polyLine.setLatLngs([[me.latlng, me.latlng]]);
                         drawingPoly = true;
                         adaptCursor();                       
-                    } else {
+                    } else {                        
                         var polyPoints = polyLine.getLatLngs();
-                        // Assume only 1 ring so add point to first element.
-                        polyPoints[0].push(me.latlng);                        
-                        polyPoints[0].push(me.latlng);
-                        polyLine.setLatLngs(polyPoints);
-                        calcDistance();
+                        lastClickedCoord = me.latlng;
+                        var startCoord = polyPoints[0][0];
+                        var startingPoint = map.latLngToLayerPoint(startCoord);
+                        var pixelDistance = startingPoint.distanceTo(map.latLngToLayerPoint(lastClickedCoord));
+                        console.log("Distance to starting point is " + pixelDistance + " pixels.");
+                        if (pixelDistance < 10) {
+                            dialogConfirmed = false;
+                            $('#closeRouteModal').modal('show');                            
+                        } else {
+                            addCoord(false);                                                                                     
+                        }                                               
                     }                    
                 });
                 map.on('mousemove', function(me) {
@@ -234,7 +296,8 @@
             }
         }, false);
         
-        LeafletMap.init("map");        
+        LeafletMap.init("map");
+        $('#closeRouteModal').on('hidden.bs.modal', LeafletMap.routeCloseModalHidden);
     </script>    
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js" integrity="sha384-6khuMg9gaYr5AxOqhkVIODVIvm9ynTT5J4V1cfthmT+emCG6yVmEZsRHdxlotUnm" crossorigin="anonymous"></script>    
   </body>
