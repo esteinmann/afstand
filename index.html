@@ -51,10 +51,11 @@
                 <div class="collapse navbar-collapse" id="navbarCollapse">
                     <ul class="navbar-nav">
                     </ul>
-                    <div class="mr-auto">
+                    <div class="mr-2">
                         <digit v-for="d in distanceDigits" v-bind:digit="d"></digit>
                     </div>
-                    <button type="button" class="btn btn-secondary mt-2 mt-md-0" onClick="LeafletMap.clear()">Clear</button>                    
+                    <button type="button" class="btn btn-secondary mr-2" onClick="LeafletMap.clear()">Clear</button>
+                    <button type="button" class="btn btn-secondary" onClick="LeafletMap.finish()">Finish</button>
                 </div>
             </nav>
         </div>
@@ -62,7 +63,7 @@
             <div id="map" class="flex-fill">
             </div>
         </div>        
-    </div>
+    </div> <!-- close container -->
     <!-- Modal -->
     <div class="modal fade" id="closeRouteModal" tabindex="-1" role="dialog" aria-labelledby="closeRouteModalTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">
@@ -82,8 +83,8 @@
                 </div>
             </div>
         </div>
-    </div>
-    </div> <!-- close app. -->
+    </div> <!-- close modal -->
+    </div> <!-- close app -->
     <script type="text/javascript">                                               
         String.prototype.lpad = function(padString, length) {
             var str = this;
@@ -191,6 +192,20 @@
                 adaptCursor();
             };
             
+            this.finish = function() {                                                
+                if (!drawingPoly) {
+                    return;
+                }
+                if (!polyLine.isEmpty()) {
+                    // Remove the last coord.
+                    var array = polyLine.getLatLngs()[0];                    
+                    array.pop();
+                    polyLine.setLatLngs([array]);
+                }                
+                drawingPoly = false;
+                adaptCursor();
+            };
+            
             this.confirm = function() {
                 dialogConfirmed = true;
                 $('#closeRouteModal').modal('hide');
@@ -285,7 +300,10 @@
             } else {
                 if (keyName === "Escape") {
                     LeafletMap.clear();
-                }                
+                }
+                else if (keyName === "Enter") {
+                    LeafletMap.finish();
+                }
             }
         }, false);
 
