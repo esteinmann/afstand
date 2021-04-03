@@ -55,7 +55,9 @@
                         <digit v-for="d in distanceDigits" v-bind:digit="d"></digit>
                     </div>
                     <button type="button" class="btn btn-secondary mr-2" onClick="LeafletMap.clear()">Clear</button>
-                    <button type="button" class="btn btn-secondary" onClick="LeafletMap.finish()">Finish</button>
+                    <button type="button" class="btn btn-secondary mr-2" onClick="LeafletMap.finish()">Finish</button>
+                    <button type="button" class="btn btn-secondary mr-2" onClick="LeafletMap.export()">Export</button>
+                    <button type="button" class="btn btn-secondary" onClick="$('#importRouteModal').modal('show')">Import</button>
                 </div>
             </nav>
         </div>
@@ -82,6 +84,60 @@
                     <button type="button" class="btn btn-primary" onClick="LeafletMap.confirm()">Close route</button>
                 </div>
             </div>
+        </div>
+    </div> <!-- close modal -->
+    <div class="modal fade" id="exportRouteModal" tabindex="-1" role="dialog" aria-labelledby="exportRouteModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exportRouteModalTitle">Export</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form>
+                        <div class="form-group">
+                            <label for="routeName">Name</label>
+                            <input type="text" class="form-control" id="routeName" aria-describedby="nameHelp" placeholder="Name" onchange="LeafletMap.updateRouteName(this.value)">
+                            <small id="nameHelp" class="form-text text-muted">Enter a descriptive name of the route.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="routeGeoJsonTextArea">Route (Base64)</label>
+                            <textarea class="form-control" id="routeGeoJsonTextArea" rows="8" aria-describedby="routeGeoJSONHelp"></textarea>
+                            <small id="routeGeoJSONHelp" class="form-text text-muted">Copy this value and save it somewhere for sharing or future use.</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>                    
+                </div>
+            </div>
+        </div>
+    </div> <!-- close modal -->
+    <div class="modal fade" id="importRouteModal" tabindex="-1" role="dialog" aria-labelledby="importRouteModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="importRouteModalTitle">Import</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form>                        
+                        <div class="form-group">
+                            <label for="importRouteDataArea">Route (Base64)</label>
+                            <textarea class="form-control" id="importRouteDataArea" rows="8" aria-describedby="importRouteDataHelp"></textarea>
+                            <small id="importRouteDataHelp" class="form-text text-muted">Enter a route previously exported.</small>
+                        </div>
+                    </form>
+                </div> <!-- close modal body -->
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onClick="LeafletMap.import()">Import</button>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div> <!-- close modal content -->
         </div>
     </div> <!-- close modal -->
     </div> <!-- close app -->
@@ -135,6 +191,43 @@
             var drawingPoly = false;
             var dialogConfirmed = false;
             var lastClickedCoord;
+            var exportedGeoJSON;
+            
+            var Importer = new function() {
+                var layer;
+                
+                this.import = function(base64) {
+                    var jsonText = atob(base64);
+                    var geoJSON = JSON.parse(jsonText);
+                    var name;
+                    var routeObject = {
+                        name: "unnamed route",
+                        distance: undefined
+                    }
+                    if (geoJSON.properties) {
+                        if (geoJSON.properties.name) {
+                            routeObject.name = geoJSON.properties.name;
+                        }
+                        if (geoJSON.properties.distance) {
+                            routeObject.distance = geoJSON.properties.distance;
+                        }                                                                        
+                    }
+                    if (layer) {
+                        layer.remove();
+                    }
+                    layer = L.geoJSON(geoJSON)
+                        .bindPopup(function () {
+                            return routeObject.name;                            
+                        }).addTo(map);
+                    return routeObject;
+                };
+                
+                this.clear = function() {
+                    if (layer) {
+                        layer.remove();
+                    }                    
+                };
+            };
             
             function resizeInternal() {
                 map.invalidateSize();
@@ -161,11 +254,11 @@
                 var totalDist = 0.0;
                 for(var i=1; i < array.length - 1; i++) {                        
                     totalDist += map.distance(array[i], array[i - 1]);
-                    }
+                }
                 console.log("Total distance on polyline: " + totalDist + " meters.");
                 app.distance = totalDist;
             }
-            
+                                        
             function addCoord(close) {
                 var polyPoints = polyLine.getLatLngs();
                 if (close) {                    
@@ -184,12 +277,56 @@
                 polyLine.setLatLngs(polyPoints);
                 calcDistance();
             }
-            
-            this.clear = function() { 
+                
+            function reset() {
                 polyLine.setLatLngs([]);
+                exportedGeoJSON = null;
                 drawingPoly = false;
                 app.distance = 0.0;
                 adaptCursor();
+                Importer.clear();
+            }
+                
+            this.export = function() {
+                if (polyLine.isEmpty()) {
+                    alert("Route is empty, nothing to export.");
+                    return;
+                }
+                if (drawingPoly) {
+                    alert("Finish the route first.");
+                    return;
+                }
+                exportedGeoJSON = polyLine.toGeoJSON();
+                exportedGeoJSON.properties = {
+                    distance: app.distance
+                };
+                var base64 = btoa(JSON.stringify(exportedGeoJSON));
+                $('#routeGeoJsonTextArea').html(base64);
+                $('#exportRouteModal').modal('show');
+            };
+                
+            this.import = function() {
+                reset();
+                var base64 = $('#importRouteDataArea').val();
+                var route = Importer.import(base64);
+                alert("Imported route named: " + route.name);
+                if (route.distance) {
+                    app.distance = route.distance;
+                }              
+                $('#importRouteModal').modal('hide');
+            }
+                
+            this.updateRouteName = function(name) {
+                if (exportedGeoJSON) {
+                    exportedGeoJSON.properties.name = name;
+                }
+                // var geoJSON = polyLine.toGeoJSON();
+                var base64 = btoa(JSON.stringify(exportedGeoJSON));
+                $('#routeGeoJsonTextArea').html(base64);
+            }
+            
+            this.clear = function() { 
+                reset();
             };
             
             this.finish = function() {                                                
@@ -235,7 +372,7 @@
                 polyLine = L.polyline([], { 
                     color: 'green', 
                     interactive: false
-                }).addTo(map);
+                }).addTo(map);                
                                                     
                 // Map events.
                 map.on('click', function(me) {                    
@@ -276,9 +413,9 @@
                 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> bijdragers'
-                }).addTo(map);                                    
+                }).addTo(map);
                                                                     
-                resizeInternal();                            
+                resizeInternal();
             };
         };
                 
@@ -315,7 +452,13 @@
         }, false);
         
         LeafletMap.init("map");
-        $('#closeRouteModal').on('hidden.bs.modal', LeafletMap.routeCloseModalHidden);
+        $('#closeRouteModal').on('hidden.bs.modal', LeafletMap.routeCloseModalHidden);        
+        $("form").keypress(function(e){
+            if(e.keyCode == 13) {
+                e.preventDefault();
+                // return false;
+            }
+            });
     </script>    
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js" integrity="sha384-6khuMg9gaYr5AxOqhkVIODVIvm9ynTT5J4V1cfthmT+emCG6yVmEZsRHdxlotUnm" crossorigin="anonymous"></script>    
   </body>
