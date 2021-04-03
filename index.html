@@ -219,6 +219,7 @@
                         .bindPopup(function () {
                             return routeObject.name;                            
                         }).addTo(map);
+                    map.fitBounds(layer.getBounds());
                     return routeObject;
                 };
                 
